@@ -24,7 +24,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Altera para o ID do YouTube no decrypt.day se for diferente
-          APP_ID: "id1437005085" 
+          APP_ID: "id544007664" 
         run: |
           python - << 'EOF'
           import os
