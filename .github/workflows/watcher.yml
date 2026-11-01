@@ -1,0 +1,99 @@
+name: Decrypt.day Watcher
+
+on:
+  schedule:
+    - cron: '0 3 * * *' # Corre todas as noites às 03:00
+  workflow_dispatch: # Permite-te testar o vigia manualmente com um clique
+
+jobs:
+  check_version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código para ler o apps.json atual
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Instalar BeautifulSoup
+        run: pip install requests beautifulsoup4
+
+      - name: Verificar decrypt.day e disparar Build se necessário
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Altera para o ID do YouTube no decrypt.day se for diferente
+          APP_ID: "id1437005085" 
+        run: |
+          python - << 'EOF'
+          import os
+          import json
+          import requests
+          from bs4 import BeautifulSoup
+
+          app_id = os.environ['APP_ID']
+          token = os.environ['GITHUB_TOKEN']
+          repo = os.environ['GITHUB_REPOSITORY'] # Ex: teu-user/uYouEnhanced
+          
+          # 1. Obter a versão atual que tens na tua AltStore (lendo o teu apps.json)
+          current_version = "0.0.0"
+          if os.path.exists("apps.json"):
+              with open("apps.json", "r") as f:
+                  data = json.load(f)
+                  # Procura a versão do YouTube gravada no teu catálogo
+                  for app in data.get("apps", []):
+                      if "youtube" in app.get("bundleIdentifier", ""):
+                          current_version = app.get("version", "0.0.0").split("-")[0]
+
+          print(f"A tua versão atual no repositório: {current_version}")
+
+          # 2. Ir ao decrypt.day ver qual é a versão mais recente limpa
+          url = f"https://decrypt.day{app_id}"
+          headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+          
+          try:
+              res = requests.get(url, headers=headers)
+              soup = BeautifulSoup(res.text, 'html.parser')
+              
+              # Procura a tag de versão no HTML do decrypt.day (ajusta o seletor se o site mudar)
+              # Exemplo genérico assumindo que está numa tag de texto ou meta:
+              version_tag = soup.find(string=lambda text: text and "Version:" in text)
+              latest_version = version_tag.replace("Version:", "").strip() if version_tag else "19.0.0" # Fallback para teste
+          except Exception as e:
+              print(f"Erro ao raspar o site: {e}")
+              exit(0)
+
+          print(f"Versão detetada no decrypt.day: {latest_version}")
+
+          # 3. Se a versão do site for mais recente, ativa o buildapp.yml via API do GitHub
+          if latest_version != current_version:
+              print("🔥 Nova versão detetada! A disparar o buildapp.yml...")
+              
+              # Link direto para o download do IPA que o buildapp precisa
+              decrypted_url = f"https://decrypt.day{app_id}.ipa"
+              
+              trigger_url = f"https://github.com{repo}/actions/workflows/buildapp.yml/dispatches"
+              headers_api = {
+                  "Authorization": f"Bearer {token}",
+                  "Accept": "application/vnd.github+json"
+              }
+              # Passa as inputs exatas que o teu buildapp.yml pede na aba manual
+              payload = {
+                  "ref": "main",
+                  "inputs": {
+                      "decrypted_youtube_url": decrypted_url,
+                      "uyou_version": "3.0.4", # Mantenha a versão padrão do tweak
+                      "app_name": "YouTube",
+                      "bundle_id": "com.google.ios.youtube"
+                  }
+              }
+              
+              trigger_res = requests.post(trigger_url, headers=headers_api, json=payload)
+              if trigger_res.status_code == 204:
+                  print("✅ Fluxo de Build iniciado com sucesso no Actions!")
+              else:
+                  print(f"❌ Erro ao iniciar build: {trigger_res.text}")
+          else:
+              print("✅ Já estás na versão mais recente. Nada a fazer.")
+          EOF
