@@ -1,0 +1,28 @@
+name: Sync Fork
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Corre todos os dias à meia-noite
+  workflow_dispatch: # Permite-te clicar no botão para sincronizar manualmente
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Descarrega todo o histórico
+          ref: main      # Força o checkout do teu ramo principal (muda para master se o teu for master)
+
+      - name: Sync upstream changes
+        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.1
+        with:
+          target_sync_branch: main # Garante que coincide com o ref acima
+          target_repo_token: ${{ secrets.GITHUB_TOKEN }}
+          upstream_sync_branch: main
+          upstream_sync_repo: arichornlover/uYouEnhanced
+          test_mode: false # Garante que ele efetivamente faz o push e grava
