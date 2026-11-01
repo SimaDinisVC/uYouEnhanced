@@ -339,5 +339,80 @@ jobs:
         with:
           tag_name: v${{ env.YOUTUBE_VERSION }}-${{ env.UYOU_VERSION }}-(${{ github.run_number }})
           name: v${{ env.YOUTUBE_VERSION }}-${{ env.UYOU_VERSION }}-(${{ github.run_number }})
+
+      - name: Atualizar apps.json para a AltStore
+        if: ${{ inputs.create_release }}
+        run: |
+          python - << 'EOF'
+          import os
+          import json
+          from datetime import datetime
+
+          # 1. Capturar as variáveis geradas pelo workflow
+          repo_owner = "${{ github.repository_owner }}"
+          repo_name = "${{ github.event.repository.name }}"
+          yt_version = "${{ env.YT_VERSION }}"
+          uyou_version = "${{ inputs.uyou_version }}"
+          run_number = "${{ github.run_number }}"
+          
+          # Formatar a Tag exatamente igual ao passo 'Create Release' do buildapp.yml
+          tag_name = f"v{yt_version}-{uyou_version}-({run_number})"
+          
+          # O nome final do arquivo IPA corrigido pelo passo 'Rebrand IPA Filename'
+          # Se o buildapp usar o rebrand para 3.0.5, o nome final ajusta-se aqui
+          ipa_filename = f"uYouEnhanced_{yt_version}_v3.0.5.ipa" 
+          download_url = f"https://github.com/{repo_owner}/{repo_name}/releases/download/{tag_name}/{ipa_filename}"
+
+          # 2. Ler o apps.json existente ou criar a estrutura base
+          json_path = "apps.json"
+          if os.path.exists(json_path):
+              with open(json_path, 'r') as f:
+                  data = json.load(f)
+          else:
+              data = {
+                  "name": "uYouEnhanced Repo",
+                  "identifier": f"com.{repo_owner}.uyouenhanced",
+                  "apps": []
+              }
+
+          # 3. Criar ou atualizar a entrada da App
+          app_bundle_id = "${{ inputs.bundle_id }}"
+          app_entry = next((a for a in data['apps'] if a['bundleIdentifier'] == app_bundle_id), None)
+          
+          new_app_data = {
+              "name": "${{ inputs.app_name }}",
+              "bundleIdentifier": app_bundle_id,
+              "developerName": "SimaDinisVC",
+              "version": f"{yt_version}-{uyou_version}",
+              "versionDate": datetime.now().strftime("%Y-%m-%d"),
+              "versionDescription": f"Compilado automaticamente via GitHub Actions (Build #{run_number})",
+              "downloadURL": download_url,
+              "iconURL": f"https://githubusercontent.com{repo_owner}/{repo_name}/main/main/Localizations/uYouPlus.bundle/AppIcons/AppIcon60x60@2x.png",
+              "size": 120000000 # Tamanho aproximado em bytes (o iOS valida pelo download)
+          }
+
+          if app_entry:
+              data['apps'].remove(app_entry)
+          data['apps'].append(new_app_data)
+
+          # 4. Guardar as alterações de volta no ficheiro
+          with open(json_path, 'w') as f:
+              json.dump(data, f, indent=2)
+          print("apps.json atualizado com sucesso!")
+          EOF
+
+      - name: Fazer Commit e Push do apps.json para a Main
+        if: ${{ inputs.create_release }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Descartar alterações de ficheiros temporários do build para não poluir a main
+          git checkout main -- apps.json 2>/dev/null || true
+          
+          git add apps.json
+          git commit -m "Bot: Atualizar catálogo da AltStore para a versão v${{ env.YT_VERSION }}-${{ inputs.uyou_version }}" || echo "Sem alterações no apps.json"
+          git push origin main
+
           files: main/packages/*.ipa
           draft: true
